@@ -915,6 +915,13 @@ class GraphNode:
         self.type = node_type  # "problem", "thought", "aggregated", "refined"
         self.score = score  # Quality score for the thought
 
+class GraphEdge:
+    """Edge in the Graph of Thoughts"""
+    def __init__(self, from_node: int, to_node: int, relation: str):
+        self.from_node = from_node
+        self.to_node = to_node
+        self.relation = relation
+        
 class ThoughtGraph:
     """Enhanced graph structure for GoT with additional utility methods"""
     
