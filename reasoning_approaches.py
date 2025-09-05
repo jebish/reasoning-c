@@ -457,16 +457,33 @@ Generate {self.branching_factor} different thoughts or approaches:"""
     
     def _evaluate_thought(self, thought: 'ThoughtNode', provider_manager, model: str, **kwargs) -> float:
         """Evaluate a thought using LLM with structured JSON output"""
-        prompt = f"""Evaluate how good this reasoning step is for solving the problem. 
+
+        path_to_node = []
+        curr = thought # Start from the thought itself
+        while curr is not None:
+            path_to_node.append(curr.content)
+            curr = curr.parent
+        path_to_node.reverse()
+
+        reasoning_path_str = "\n".join(f"Step {i+1}: {step}" for i, step in enumerate(path_to_node))
+        # --- END IMPROVEMENT ---
+        
+        prompt = f"""Evaluate how promising the LAST step in this reasoning path is for solving the overall problem. 
     Return ONLY a number between 1 and 10 as JSON: {{"score": number}}.
+    - A score of 1 means the last step is irrelevant or incorrect.
+    - A score of 10 means the last step is a highly logical and promising continuation.
 
     Problem: {thought.problem}
-    Reasoning step: {thought.content}
+
+    Reasoning Path:
+    {reasoning_path_str}
 
     JSON:"""
         response = provider_manager.generate_response(prompt, model, **kwargs)
         try:
-            score_json = json.loads(response["content"])
+            # Be robust to markdown code blocks in the output
+            content = response["content"].strip().replace("```json", "").replace("```", "")
+            score_json = json.loads(content)
             return float(score_json.get("score", 5))
         except Exception:
             return 5.0
