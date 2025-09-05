@@ -725,8 +725,8 @@ class GraphOfThoughtApproach(BaseReasoningApproach):
             prompt = f"""Problem context: {problem_context}
 
 Current thought: {node.content}
-"
-The Strategy is to: {strategy}
+
+Apply strategy: {strategy}
 
 Generate **intermediate, non-final reasoning steps** to continue solving the problem for the current thought.
 - **DO NOT** state the final answer.
