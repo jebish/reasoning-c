@@ -725,10 +725,14 @@ class GraphOfThoughtApproach(BaseReasoningApproach):
             prompt = f"""Problem context: {problem_context}
 
 Current thought: {node.content}
+"
+The Strategy is to: {strategy}
 
-Strategy: {strategy}
+Generate **intermediate, non-final reasoning steps** to continue solving the problem for the current thought.
+- **DO NOT** state the final answer.
+- **DO** propose a calculation, a logical deduction, or a sub-problem to solve next.
 
-Generate a new thought following this strategy:"""
+Next logical steps:"""
             
             response = provider_manager.generate_response(prompt, model, **kwargs)
             thought = response["content"].strip()
