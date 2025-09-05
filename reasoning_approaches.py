@@ -395,41 +395,31 @@ class TreeOfThoughtApproach(BaseReasoningApproach):
         best_path = self._find_best_path(tree.root)
         return self._generate_final_answer(best_path, provider_manager, model, **kwargs)
     
-        # REPLACE your existing _bfs_search with this one.
-    def _bfs_search(self, tree: 'ThoughtTree', provider_manager, model: str, beam_width: int = 3, **kwargs) -> str:
-        """
-        Performs a Breadth-First Search using a fixed beam width at each level.
-        This combines the safety of BFS with the cost control of a beam search.
-        """
-        # The 'current_level_nodes' will store all nodes at the current depth
-        current_level_nodes = [tree.root]
-
-        for depth in range(self.max_depth):
-            # 1. Generate all possible children for all nodes at the current level
-            all_children_for_level = []
-            for node in current_level_nodes:
-                # We check the node's depth again in case of an uneven tree
-                if node.depth >= self.max_depth:
-                    continue
+    def _bfs_search(self, tree: 'ThoughtTree', provider_manager, model: str, **kwargs) -> str:
+        """Breadth-First Search with pruning as per ToT paper"""
+        from collections import deque
+        queue = deque([tree.root])
+        
+        while queue:
+            current = queue.popleft()
+            
+            # Skip if at max depth
+            if current.depth >= self.max_depth:
+                continue
+            
+            # Generate thoughts (branches)
+            thoughts = self._generate_thoughts(current, provider_manager, model, **kwargs)
+            
+            # Evaluate and filter thoughts
+            for thought in thoughts:
+                thought.evaluation = self._evaluate_thought(thought, provider_manager, model, **kwargs)
                 
-                thoughts = self._generate_thoughts(node, provider_manager, model, **kwargs)
-                for thought in thoughts:
-                    thought.evaluation = self._evaluate_thought(thought, provider_manager, model, **kwargs)
-                    node.add_child(thought)
-                    all_children_for_level.append(thought)
-            
-            # 2. If no children were generated at all, stop.
-            if not all_children_for_level:
-                break
-            
-            # 3. Prune the entire level down to the beam width
-            # Sort all generated children from this level by their score
-            all_children_for_level.sort(key=lambda x: x.evaluation, reverse=True)
-            
-            # The next level's nodes are only the top 'k' children from this level
-            current_level_nodes = all_children_for_level[:beam_width]
-
-        # After the search is complete, find the best path in the constructed tree
+                # Only add promising thoughts (pruning)
+                if thought.evaluation >= self.pruning_threshold:
+                    current.add_child(thought)
+                    queue.append(thought)
+        
+        # Find best path and generate final answer
         best_path = self._find_best_path(tree.root)
         return self._generate_final_answer(best_path, provider_manager, model, **kwargs)
     
