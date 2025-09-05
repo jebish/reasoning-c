@@ -484,12 +484,16 @@ Each step should be a concrete, actionable reasoning step that builds on the cur
         
         reasoning_path_str = "\n".join(f"Step {i+1}: {step}" for i, step in enumerate(path_to_node))
         
-        prompt = f"""Evaluate how promising this reasoning path is for solving the problem.
-Rate from 1-10 where:
-- 1-3: Poor reasoning, likely to lead nowhere or contains errors
-- 4-6: Moderate reasoning, some promise but unclear direction  
-- 7-8: Good reasoning, logical and likely to be productive
-- 9-10: Excellent reasoning, highly promising and well-structured
+        prompt = f"""You are a strict, meticulous fact-checker. Evaluate the LAST step in this reasoning path for its logical and factual correctness.
+Return ONLY a JSON object with the score: {{"score": number}}.
+
+SCORING RUBRIC:
+- 1-3: The step contains a mathematical error, a logical fallacy, or is a clear dead-end.
+- 4-6: The step is plausible but not well-justified or could be a distraction.
+- 7-8: The step is logical, correct, and a good continuation of the path.
+- 9-10: The step is a critical, highly insightful, and correct step that significantly moves towards the solution.
+
+Critically check all calculations. If there is a calculation error, the score MUST be 3 or lower.
 
 Problem: {thought.problem}
 
