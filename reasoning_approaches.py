@@ -635,34 +635,30 @@ class ThoughtTree:
 
 class GraphOfThoughtApproach(BaseReasoningApproach):
     """
-    Graph-of-Thought (GoT)
-    Source: Besta et al. "Graph of Thoughts: Solving Elaborate Problems with Large Language Models" (2023)
-    https://arxiv.org/abs/2308.09687
-    
-    This implementation includes proper graph operations as described in the original paper.
+    Enhanced Graph-of-Thought (GoT) implementation
+    Based on: Besta et al. "Graph of Thoughts: Solving Elaborate Problems with Large Language Models" (2023)
     """
     
-    def __init__(self, max_nodes: int = 10):
-        super().__init__("Graph-of-Thought (GoT)")
+    def __init__(self, max_nodes: int = 15, score_threshold: float = 7.0):
+        super().__init__("Enhanced Graph-of-Thought (GoT)")
         self.max_nodes = max_nodes
+        self.score_threshold = score_threshold
     
     def reason(self, input_text: str, provider_manager, model: str, **kwargs) -> ReasoningResult:
         start_time = time.time()
         
-        # Initialize graph
+        # Initialize graph with problem node
         graph = ThoughtGraph()
-        root_node = graph.add_node(input_text, "problem")
+        root_node = graph.add_node(input_text, "problem", score=8.0)
         
-        # Build the graph through iterative operations
-        self._build_graph(graph, root_node, provider_manager, model, **kwargs)
+        # Build graph through strategic operations
+        self._build_strategic_graph(graph, root_node, provider_manager, model, **kwargs)
         
-        # Traverse graph to find solution
-        final_answer = self._traverse_graph(graph, provider_manager, model, **kwargs)
+        # Find best solution path
+        final_answer = self._find_best_solution(graph, provider_manager, model, **kwargs)
         
         execution_time = time.time() - start_time
-        
-        # Build reasoning trace
-        reasoning_trace = self._build_graph_trace(graph)
+        reasoning_trace = self._build_detailed_trace(graph)
         
         return ReasoningResult(
             final_answer=final_answer,
@@ -671,142 +667,287 @@ class GraphOfThoughtApproach(BaseReasoningApproach):
             approach_name=self.name,
             metadata={
                 "max_nodes": self.max_nodes,
+                "score_threshold": self.score_threshold,
                 "graph_structure": graph.to_dict(),
+                "best_path_scores": self._get_path_scores(graph),
                 "citation": "Besta et al. (2023). Graph of Thoughts: Solving Elaborate Problems with Large Language Models. arXiv:2308.09687"
             }
         )
     
-    def _build_graph(self, graph: 'ThoughtGraph', root_node: 'GraphNode', provider_manager, model: str, **kwargs):
-        """Build the graph through GoT operations"""
-        current_nodes = [root_node]
+    def _build_strategic_graph(self, graph: ThoughtGraph, root_node: GraphNode, provider_manager, model: str, **kwargs):
+        """Build graph using strategic GoT operations"""
+        active_nodes = [root_node]
+        iteration = 0
         
-        for iteration in range(self.max_nodes // 3):  # Limit iterations
+        while len(graph.nodes) < self.max_nodes and active_nodes and iteration < 5:
+            iteration += 1
             new_nodes = []
             
-            for node in current_nodes:
+            # Generate phase
+            for node in active_nodes:
                 if len(graph.nodes) >= self.max_nodes:
                     break
                 
-                # Generate new thoughts
-                new_thoughts = self._generate_thoughts(node, provider_manager, model, **kwargs)
+                generated_thoughts = self._generate_strategic_thoughts(
+                    node, graph.nodes[0].content, provider_manager, model, **kwargs
+                )
                 
-                for thought_content in new_thoughts:
+                for thought_content in generated_thoughts:
                     new_node = graph.add_node(thought_content, "thought")
                     graph.add_edge(node.id, new_node.id, "generates")
                     new_nodes.append(new_node)
             
+            # Score new thoughts
+            if new_nodes:
+                scores = self._score_thoughts(new_nodes, provider_manager, model, **kwargs)
+                for node in new_nodes:
+                    node.score = scores.get(node.id, 5.0)
+            
+            # Select best thoughts for next iteration
+            all_unscored = [n for n in graph.get_nodes_by_type("thought") if n.score >= self.score_threshold]
+            active_nodes = sorted(all_unscored, key=lambda x: x.score, reverse=True)[:3]
+            
             # Perform graph operations
-            self._perform_graph_operations(graph, provider_manager, model, **kwargs)
-            current_nodes = new_nodes
+            if iteration % 2 == 0:  # Every other iteration
+                self._perform_advanced_operations(graph, provider_manager, model, **kwargs)
     
-    def _generate_thoughts(self, node: 'GraphNode', provider_manager, model: str, **kwargs) -> List[str]:
-        """Generate new thoughts from a node"""
-        prompt = f"""Generate 2-3 new thoughts or insights related to this:
-
-{node.content}
-
-Generate new thoughts:"""
+    def _generate_strategic_thoughts(self, node: GraphNode, problem_context: str, provider_manager, model: str, **kwargs) -> List[str]:
+        """Generate thoughts using strategic approaches"""
+        strategies = [
+            "decompose this into smaller, manageable parts",
+            "explore alternative approaches or perspectives", 
+            "identify potential challenges or obstacles",
+            "consider what resources or information might be needed"
+        ]
         
-        response = provider_manager.generate_response(prompt, model, **kwargs)
-        
-        # Parse thoughts
         thoughts = []
-        lines = response["content"].split('\n')
-        for line in lines:
-            if line.strip() and not line.strip().startswith(('1.', '2.', '3.', '-', '*')):
-                thoughts.append(line.strip())
-        
-        return thoughts[:3]  # Limit to 3 thoughts
-    
-    def _perform_graph_operations(self, graph: 'ThoughtGraph', provider_manager, model: str, **kwargs):
-        """Perform GoT graph operations: merge, feedback, etc."""
-        # Merge operation: combine similar thoughts
-        self._merge_operation(graph, provider_manager, model, **kwargs)
-        
-        # Feedback operation: refine thoughts based on others
-        self._feedback_operation(graph, provider_manager, model, **kwargs)
-    
-    def _merge_operation(self, graph: 'ThoughtGraph', provider_manager, model: str, **kwargs):
-        """Merge similar thoughts into a new combined thought"""
-        if len(graph.nodes) < 3:
-            return
-        
-        # Find nodes to merge (simplified: take first 2 thought nodes)
-        thought_nodes = [n for n in graph.nodes.values() if n.type == "thought"]
-        if len(thought_nodes) < 2:
-            return
-        
-        node1, node2 = thought_nodes[0], thought_nodes[1]
-        
-        prompt = f"""Merge these two thoughts into a single, more comprehensive thought:
+        for strategy in strategies[:2]:  # Use 2 strategies per node
+            prompt = f"""Problem context: {problem_context}
 
-Thought 1: {node1.content}
-Thought 2: {node2.content}
+Current thought: {node.content}
 
-Merged thought:"""
+Strategy: {strategy}
+
+Generate a new thought following this strategy:"""
+            
+            response = provider_manager.generate_response(prompt, model, **kwargs)
+            thought = response["content"].strip()
+            if thought and len(thought) > 10:  # Basic quality check
+                thoughts.append(thought)
+        
+        return thoughts
+    
+    def _score_thoughts(self, thoughts: List[GraphNode], provider_manager, model: str, **kwargs) -> Dict[int, float]:
+        """Score thoughts based on quality, relevance, and feasibility"""
+        scores = {}
+        
+        for node in thoughts:
+            prompt = f"""Rate this thought on a scale of 1-10 considering:
+- Relevance to the problem
+- Clarity and specificity  
+- Feasibility/practicality
+- Potential to lead to solution
+
+Thought: {node.content}
+
+Provide only a single number (1-10):"""
+            
+            response = provider_manager.generate_response(prompt, model, **kwargs)
+            score = self._parse_score(response["content"])
+            scores[node.id] = score
+            
+        return scores
+    
+    def _parse_score(self, response: str) -> float:
+        """Extract numeric score from response"""
+        import re
+        numbers = re.findall(r'\b([1-9](?:\.[0-9])?|10(?:\.0)?)\b', response)
+        if numbers:
+            return float(numbers[0])
+        return 5.0  # Default score
+    
+    def _perform_advanced_operations(self, graph: ThoughtGraph, provider_manager, model: str, **kwargs):
+        """Perform advanced GoT operations: aggregate, refine, validate"""
+        
+        # Aggregate operation: combine high-scoring thoughts
+        high_scoring = [n for n in graph.get_nodes_by_type("thought") if n.score >= self.score_threshold]
+        if len(high_scoring) >= 2:
+            self._aggregate_thoughts(graph, high_scoring[:2], provider_manager, model, **kwargs)
+        
+        # Refinement operation
+        thoughts_to_refine = [n for n in graph.get_nodes_by_type("thought") if 6.0 <= n.score < self.score_threshold]
+        if thoughts_to_refine:
+            self._refine_thought(graph, thoughts_to_refine[0], provider_manager, model, **kwargs)
+    
+    def _aggregate_thoughts(self, graph: ThoughtGraph, thoughts: List[GraphNode], provider_manager, model: str, **kwargs):
+        """Combine multiple thoughts into a more comprehensive one"""
+        thought_contents = [t.content for t in thoughts]
+        
+        prompt = f"""Combine these thoughts into a single, more comprehensive and actionable thought:
+
+{chr(10).join(f"- {content}" for content in thought_contents)}
+
+Combined thought:"""
         
         response = provider_manager.generate_response(prompt, model, **kwargs)
         
-        # Create merged node
-        merged_node = graph.add_node(response["content"], "merged")
-        graph.add_edge(node1.id, merged_node.id, "merged_from")
-        graph.add_edge(node2.id, merged_node.id, "merged_from")
+        # Create aggregated node
+        agg_node = graph.add_node(response["content"], "aggregated")
+        for thought in thoughts:
+            graph.add_edge(thought.id, agg_node.id, "aggregated_into")
+        
+        # Score the aggregated thought
+        scores = self._score_thoughts([agg_node], provider_manager, model, **kwargs)
+        agg_node.score = scores.get(agg_node.id, 7.0)
     
-    def _feedback_operation(self, graph: 'ThoughtGraph', provider_manager, model: str, **kwargs):
-        """Create feedback loops to refine thoughts"""
-        if len(graph.nodes) < 2:
-            return
-        
-        # Find a thought node to refine
-        thought_nodes = [n for n in graph.nodes.values() if n.type == "thought"]
-        if not thought_nodes:
-            return
-        
-        node_to_refine = thought_nodes[0]
-        
-        prompt = f"""Refine this thought based on the overall problem context:
+    def _refine_thought(self, graph: ThoughtGraph, thought: GraphNode, provider_manager, model: str, **kwargs):
+        """Refine a thought to improve its quality"""
+        prompt = f"""Improve and refine this thought to make it clearer, more specific, and more actionable:
 
-Original thought: {node_to_refine.content}
+Original: {thought.content}
 
-Refined thought:"""
+Refined version:"""
         
         response = provider_manager.generate_response(prompt, model, **kwargs)
         
-        # Create refined node
         refined_node = graph.add_node(response["content"], "refined")
-        graph.add_edge(node_to_refine.id, refined_node.id, "refined_to")
-    
-    def _traverse_graph(self, graph: 'ThoughtGraph', provider_manager, model: str, **kwargs) -> str:
-        """Traverse the graph to generate final answer"""
-        # Collect all thoughts
-        all_thoughts = [node.content for node in graph.nodes.values()]
+        graph.add_edge(thought.id, refined_node.id, "refined_to")
         
-        prompt = f"""Based on all these thoughts and reasoning, provide the final answer:
+        # Score refined thought
+        scores = self._score_thoughts([refined_node], provider_manager, model, **kwargs)
+        refined_node.score = scores.get(refined_node.id, thought.score + 1.0)
+    
+    def _find_best_solution(self, graph: ThoughtGraph, provider_manager, model: str, **kwargs) -> str:
+        """Find the best solution by traversing highest-scoring path"""
+        
+        # Get all high-quality thoughts
+        quality_thoughts = [n for n in graph.nodes.values() 
+                          if n.type in ["thought", "aggregated", "refined"] and n.score >= self.score_threshold]
+        
+        if not quality_thoughts:
+            quality_thoughts = sorted([n for n in graph.nodes.values() if n.type != "problem"], 
+                                    key=lambda x: getattr(x, 'score', 5.0), reverse=True)[:5]
+        
+        # Generate solution based on best thoughts
+        best_thoughts_content = [t.content for t in sorted(quality_thoughts, key=lambda x: x.score, reverse=True)]
+        
+        prompt = f"""Based on this high-quality reasoning, provide the final solution:
 
-Problem: {graph.nodes[0].content}
+Original Problem: {graph.nodes[0].content}
 
-All thoughts and reasoning:
-{chr(10).join(f"- {thought}" for thought in all_thoughts[1:])}
+Best thoughts and insights:
+{chr(10).join(f"• {content}" for content in best_thoughts_content)}
 
-Final answer:"""
+Provide a clear, actionable final solution:"""
         
         response = provider_manager.generate_response(prompt, model, **kwargs)
         return response["content"]
     
-    def _build_graph_trace(self, graph: 'ThoughtGraph') -> str:
-        """Build reasoning trace from graph structure"""
-        trace = "Graph of Thoughts\n"
+    def _get_path_scores(self, graph: ThoughtGraph) -> Dict:
+        """Get scoring information for metadata"""
+        scores_by_type = {}
+        for node in graph.nodes.values():
+            node_type = node.type
+            if node_type not in scores_by_type:
+                scores_by_type[node_type] = []
+            scores_by_type[node_type].append(getattr(node, 'score', 0.0))
+        
+        return {k: {"avg": sum(v)/len(v), "max": max(v), "count": len(v)} 
+                for k, v in scores_by_type.items() if v}
+    
+    def _build_detailed_trace(self, graph: ThoughtGraph) -> str:
+        """Build comprehensive reasoning trace"""
+        trace = "Enhanced Graph of Thoughts Reasoning\n"
+        trace += "=" * 50 + "\n\n"
         trace += f"Problem: {graph.nodes[0].content}\n\n"
         
-        for node_id, node in graph.nodes.items():
-            trace += f"Node {node_id} ({node.type}): {node.content}\n"
-            for edge in graph.edges:
-                if edge.from_node == node_id:
-                    trace += f"  -> {edge.relation} -> Node {edge.to_node}\n"
+        # Group nodes by type and score
+        by_type = {}
+        for node in graph.nodes.values():
+            if node.type not in by_type:
+                by_type[node.type] = []
+            by_type[node.type].append(node)
+        
+        for node_type, nodes in by_type.items():
+            if node_type == "problem":
+                continue
+                
+            trace += f"{node_type.upper()} NODES:\n"
+            trace += "-" * 20 + "\n"
+            
+            # Sort by score if available
+            sorted_nodes = sorted(nodes, key=lambda x: getattr(x, 'score', 0), reverse=True)
+            
+            for node in sorted_nodes:
+                score_str = f" (Score: {getattr(node, 'score', 'N/A')})" if hasattr(node, 'score') else ""
+                trace += f"Node {node.id}{score_str}: {node.content}\n"
+                
+                # Show relationships
+                related_edges = [e for e in graph.edges if e.from_node == node.id or e.to_node == node.id]
+                for edge in related_edges:
+                    if edge.from_node == node.id:
+                        trace += f"  → {edge.relation} → Node {edge.to_node}\n"
+                    else:
+                        trace += f"  ← {edge.relation} ← Node {edge.from_node}\n"
+                trace += "\n"
+            
             trace += "\n"
         
         return trace
 
+class GraphNode:
+    """Enhanced node in the Graph of Thoughts with scoring capability"""
+    
+    def __init__(self, node_id: int, content: str, node_type: str, score: float = None):
+        self.id = node_id
+        self.content = content
+        self.type = node_type  # "problem", "thought", "aggregated", "refined"
+        self.score = score  # Quality score for the thought
+
+class ThoughtGraph:
+    """Enhanced graph structure for GoT with additional utility methods"""
+    
+    def __init__(self):
+        self.nodes = {}
+        self.edges = []
+        self.next_node_id = 0
+    
+    def add_node(self, content: str, node_type: str, score: float = None) -> GraphNode:
+        node = GraphNode(self.next_node_id, content, node_type, score)
+        self.nodes[self.next_node_id] = node
+        self.next_node_id += 1
+        return node
+    
+    def add_edge(self, from_node: int, to_node: int, relation: str):
+        edge = GraphEdge(from_node, to_node, relation)
+        self.edges.append(edge)
+    
+    def get_nodes_by_type(self, node_type: str) -> List[GraphNode]:
+        """Get all nodes of a specific type"""
+        return [node for node in self.nodes.values() if node.type == node_type]
+    
+    def get_neighbors(self, node_id: int) -> List[GraphNode]:
+        """Get neighboring nodes"""
+        neighbors = []
+        for edge in self.edges:
+            if edge.from_node == node_id:
+                neighbors.append(self.nodes[edge.to_node])
+            elif edge.to_node == node_id:
+                neighbors.append(self.nodes[edge.from_node])
+        return neighbors
+    
+    def to_dict(self):
+        """Convert graph to dictionary for serialization"""
+        return {
+            "nodes": {
+                str(k): {
+                    "content": v.content, 
+                    "type": v.type,
+                    "score": getattr(v, 'score', None)
+                } for k, v in self.nodes.items()
+            },
+            "edges": [{"from": e.from_node, "to": e.to_node, "relation": e.relation} for e in self.edges]
+        }
 
 class ReWOOApproach(BaseReasoningApproach):
     """
@@ -918,51 +1059,6 @@ Synthesize these thoughts and provide the final answer:"""
 
 
 # Supporting classes for ToT and GoT
-
-
-
-class GraphNode:
-    """Node in the Graph of Thoughts"""
-    
-    def __init__(self, node_id: int, content: str, node_type: str):
-        self.id = node_id
-        self.content = content
-        self.type = node_type  # "problem", "thought", "merged", "refined"
-
-
-class GraphEdge:
-    """Edge in the Graph of Thoughts"""
-    
-    def __init__(self, from_node: int, to_node: int, relation: str):
-        self.from_node = from_node
-        self.to_node = to_node
-        self.relation = relation
-
-
-class ThoughtGraph:
-    """Graph structure for GoT"""
-    
-    def __init__(self):
-        self.nodes = {}
-        self.edges = []
-        self.next_node_id = 0
-    
-    def add_node(self, content: str, node_type: str) -> GraphNode:
-        node = GraphNode(self.next_node_id, content, node_type)
-        self.nodes[self.next_node_id] = node
-        self.next_node_id += 1
-        return node
-    
-    def add_edge(self, from_node: int, to_node: int, relation: str):
-        edge = GraphEdge(from_node, to_node, relation)
-        self.edges.append(edge)
-    
-    def to_dict(self):
-        """Convert graph to dictionary for serialization"""
-        return {
-            "nodes": {str(k): {"content": v.content, "type": v.type} for k, v in self.nodes.items()},
-            "edges": [{"from": e.from_node, "to": e.to_node, "relation": e.relation} for e in self.edges]
-        }
 
 
 class ReasoningApproachManager:
