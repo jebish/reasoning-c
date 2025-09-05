@@ -334,7 +334,7 @@ class TreeOfThoughtApproach(BaseReasoningApproach):
         start_time = time.time()
         
         # Initialize the tree
-        root = ThoughtNode(input_text, depth=0)
+        root = ThoughtNode(content=input_text, problem=input_text, depth=0)
         tree = ThoughtTree(root)
         
         # Generate and explore the tree using search algorithms
