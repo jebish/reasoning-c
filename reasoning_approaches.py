@@ -746,15 +746,22 @@ Next logical steps:"""
         scores = {}
         
         for node in thoughts:
-            prompt = f"""Rate this thought on a scale of 1-10 considering:
-- Relevance to the problem
-- Clarity and specificity  
-- Feasibility/practicality
-- Potential to lead to solution
+            prompt = f"""You are a strict, meticulous fact-checker. Your task is to evaluate a reasoning step for a math problem.
+Problem: {graph.nodes[0].content}  # Provide the original problem for context
+
+Evaluate the following thought on a scale of 1-10.
+- **CRITICALLY CHECK all calculations and logical assumptions.**
+- If the thought contains a mathematical or factual error, it **MUST receive a score of 3 or lower.**
+
+SCORING RUBRIC:
+- 1-3: Incorrect. Contains a mathematical error, a logical fallacy, or is a clear dead-end.
+- 4-6: Plausible but not well-justified or could be a distraction.
+- 7-8: Logical, correct, and a good step towards the solution.
+- 9-10: A critical, highly insightful, and correct step.
 
 Thought: {node.content}
 
-Provide only a single number (1-10):"""
+Provide ONLY a JSON object with the score: {{"score": number}}"""
             
             response = provider_manager.generate_response(prompt, model, **kwargs)
             score = self._parse_score(response["content"])
