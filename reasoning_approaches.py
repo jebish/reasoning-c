@@ -456,20 +456,20 @@ Generate {self.branching_factor} different thoughts or approaches:"""
         return thoughts
     
     def _evaluate_thought(self, thought: 'ThoughtNode', provider_manager, model: str, **kwargs) -> float:
-    """Evaluate a thought using LLM with structured JSON output"""
-    prompt = f"""Evaluate how good this reasoning step is for solving the problem. 
-Return ONLY a number between 1 and 10 as JSON: {{"score": number}}.
+        """Evaluate a thought using LLM with structured JSON output"""
+        prompt = f"""Evaluate how good this reasoning step is for solving the problem. 
+    Return ONLY a number between 1 and 10 as JSON: {{"score": number}}.
 
-Problem: {thought.problem}
-Reasoning step: {thought.content}
+    Problem: {thought.problem}
+    Reasoning step: {thought.content}
 
-JSON:"""
-    response = provider_manager.generate_response(prompt, model, **kwargs)
-    try:
-        score_json = json.loads(response["content"])
-        return float(score_json.get("score", 5))
-    except Exception:
-        return 5.0
+    JSON:"""
+        response = provider_manager.generate_response(prompt, model, **kwargs)
+        try:
+            score_json = json.loads(response["content"])
+            return float(score_json.get("score", 5))
+        except Exception:
+            return 5.0
     
     def _find_best_path(self, root: 'ThoughtNode') -> List['ThoughtNode']:
         """Find the best path through the tree"""
