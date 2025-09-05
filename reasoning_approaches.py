@@ -322,7 +322,7 @@ class TreeOfThoughtApproach(BaseReasoningApproach):
     https://arxiv.org/abs/2305.10601
     """
     
-    def __init__(self, search_algorithm: str = "dfs", max_depth: int = 3, branching_factor: int = 3, pruning_threshold: float = 6.0):
+    def __init__(self, search_algorithm: str = "bfs", max_depth: int = 3, branching_factor: int = 3, pruning_threshold: float = 7.0):
         super().__init__("Tree-of-Thought (ToT)")
         self.search_algorithm = search_algorithm
         self.max_depth = max_depth
