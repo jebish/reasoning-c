@@ -1481,11 +1481,13 @@ class GraphOfThoughtsEngine:
             # Safety check: if frontier is empty, try to recover
             if not frontier:
                 all_scored = [n for n in graph.nodes.values() 
-                            if n.type == "thought" and n.score is not None]
+                            if n.type != "problem" and n.score is not None]  # Exclude problem node
                 if all_scored:
                     all_scored.sort(key=lambda x: x.score, reverse=True)
                     frontier = [all_scored[0].id]
+                    print(f"Emergency recovery: using node {frontier[0]}")
                 else:
+                    print("No recoverable nodes found - terminating")
                     break
 
         # Synthesize final answer from high-quality subgraph
