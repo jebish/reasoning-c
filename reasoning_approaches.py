@@ -1348,7 +1348,7 @@ def jaccard_similarity(a: str, b: str) -> float:
 
 # ----------------- Graph-of-Thoughts Approach -----------------
 
-class GraphOfThoughts:
+class GraphOfThoughtApproach:
     """Refactored Graph-of-Thoughts approach with flexible policies.
 
     Parameters
