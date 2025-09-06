@@ -1703,8 +1703,8 @@ class GraphOfThoughtsEngine:
 
         Strategy:
         - select top-K nodes (by score)
-        - optionally extend them by following in_edges to build a small subgraph
         - ask the model to synthesize a step-by-step solution using those nodes
+        - emphasize mathematical accuracy and verification
         """
         quality_nodes = [n for n in graph.nodes.values() 
                         if n.type != "problem" and (n.score or 0) >= self.score_threshold]
@@ -1721,19 +1721,28 @@ class GraphOfThoughtsEngine:
 
         # Build compact context lines
         problem_content = graph.nodes[0].content if 0 in graph.nodes else problem
-        header = f"Problem: {problem_content}\n\nUse the following high-quality reasoning steps (do NOT add new assumptions)."
-        steps = []
+        header = f"PROBLEM: {problem_content}\n\n"
         
-        for n in sorted(quality_nodes, key=lambda x: x.score or 0, reverse=True)[:8]:  # Limit to top 8
+        steps = []
+        for i, n in enumerate(sorted(quality_nodes, key=lambda x: x.score or 0, reverse=True)[:6], 1):
             score_str = f"(score={n.score:.1f})" if n.score is not None else "(score=N/A)"
-            steps.append(f"{score_str} {n.content}")
+            steps.append(f"Step {i} {score_str}: {n.content}")
 
         if not steps:
             return "Unable to find quality reasoning steps to synthesize."
 
-        prompt = header + "\n\nHigh-quality steps:\n" + "\n".join(f"- {s}" for s in steps) + (
-            "\n\nInstruction: Synthesize the above into a clear, step-by-step solution and compute the final answer. "
-            "Be concise and do not invent extra facts."
+        prompt = (
+            header + 
+            "High-quality reasoning steps:\n" + 
+            "\n".join(steps) + 
+            "\n\nINSTRUCTION: Using ONLY the steps above, create a complete step-by-step mathematical solution. "
+            "Pay special attention to:\n"
+            "1. Mathematical accuracy in all calculations\n"
+            "2. Logical flow between steps\n"
+            "3. Clear final numerical answer\n"
+            "4. Verification that the answer makes sense\n\n"
+            "Do NOT add new assumptions or skip mathematical verification. "
+            "Show all calculations explicitly."
         )
         
         try:
