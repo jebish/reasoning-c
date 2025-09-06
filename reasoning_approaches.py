@@ -1349,7 +1349,7 @@ def jaccard_similarity(a: str, b: str) -> float:
 
 # ----------------- Graph-of-Thoughts Approach -----------------
 
-class GraphOfThoughtApproach:
+class GraphOfThoughtsEngine:
     """Refactored Graph-of-Thoughts approach with flexible policies.
 
     Parameters
@@ -1621,6 +1621,57 @@ class GraphOfThoughtApproach:
         )
         resp = provider_manager.generate_response(prompt, model, **kwargs)
         return resp.get("content", "").strip()
+
+class GraphOfThoughtApproach(BaseReasoningApproach):
+    """
+    Adapter for the GraphOfThoughtsEngine to make it compatible with the BaseReasoningApproach framework.
+    """
+    def __init__(self, **engine_kwargs):
+        super().__init__("Graph-of-Thought (GoT)")
+        # This class now holds an instance of the powerful engine
+        self.engine = GraphOfThoughtsEngine(**engine_kwargs)
+
+    def reason(self, input_text: str, provider_manager, model: str, **kwargs) -> ReasoningResult:
+        # Call the engine's reason method, which returns a dictionary
+        result_dict = self.engine.reason(input_text, provider_manager, model, **kwargs)
+
+        # Build the detailed trace from the graph object
+        reasoning_trace = self._build_detailed_trace(result_dict['graph'])
+
+        # Package the dictionary's results into the expected ReasoningResult object
+        return ReasoningResult(
+            final_answer=result_dict['final_answer'],
+            reasoning_trace=reasoning_trace,
+            execution_time=result_dict['execution_time'],
+            approach_name=self.name,
+            metadata={
+                "graph_structure": result_dict['graph'].to_dict(),
+                "iterations": result_dict.get('iterations', 0),
+                "citation": "Besta et al. (2023). Graph of Thoughts: Solving Elaborate Problems with Large Language Models. arXiv:2308.09687"
+            }
+        )
+
+    def _build_detailed_trace(self, graph: ThoughtGraph) -> str:
+        """Creates a readable string representation of the graph for the trace."""
+        if not graph or not graph.nodes:
+            return "Graph is empty or was not generated."
+        
+        trace = f"Graph of Thoughts Reasoning (Nodes: {len(graph.nodes)})\n" + "=" * 50 + "\n"
+        trace += f"Problem: {graph.nodes[0].content}\n\n"
+        
+        # Sort nodes by ID for a chronological view
+        sorted_nodes = sorted(graph.nodes.values(), key=lambda n: n.id)
+
+        for node in sorted_nodes:
+            if node.type == "problem": continue
+            score_str = f" (Score: {node.score:.1f})" if node.score is not None else ""
+            trace += f"Node {node.id} [{node.type.upper()}]{score_str}: {node.content}\n"
+            # Show incoming connections that formed this node
+            for edge in graph.edges:
+                if edge.to_node == node.id:
+                    trace += f"  ← {edge.relation} ← Node {edge.from_node} ({graph.nodes[edge.from_node].type})\n"
+            trace += "\n"
+        return trace
 
 class ReWOOApproach(BaseReasoningApproach):
     """
