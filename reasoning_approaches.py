@@ -44,10 +44,10 @@ class NoneApproach(BaseReasoningApproach):
     
     def reason(self, input_text: str, provider_manager, model: str, **kwargs) -> ReasoningResult:
         start_time = time.time()
-        none_prompt = f"""{input_text}
+        none_prompt = f"""Respond exactly in this format: <final>[answer]</final>
+        {input_text}
 
-        Respond exactly in this format: 
-        <final>[answer]</final>:"""
+        Respond exactly in this format: <final>[answer]</final>"""
         response = provider_manager.generate_response(input_text, model, **kwargs)
         
         execution_time = time.time() - start_time
