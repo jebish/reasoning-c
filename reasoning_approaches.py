@@ -796,24 +796,26 @@ DETAILED EXPANSION:"""
             f"SECTION {i+1}:\n{part}" for i, part in enumerate(expanded_parts)
         ])
         
-        aggregation_prompt = f"""Combine the following sections into a single, coherent, well-flowing answer.
+        aggregation_prompt = f"""**ROLE:** You are a final answer synthesizer.
+**TASK:** Combine the provided sections into a single, coherent answer and then format it EXACTLY into the specified XML-like structure.
 
-ORIGINAL QUESTION: {original_question}
-
-OUTLINE USED:
+**ORIGINAL QUESTION:** {original_question}
+**OUTLINE USED:**
 {skeleton}
 
-SECTIONS TO COMBINE:
+**SECTIONS TO COMBINE:**
 {sections_text}
 
-INSTRUCTIONS:
-- Create smooth transitions between sections
-- Remove any redundancy or contradictions
-- Maintain all important information
-- Ensure logical flow and readability
-- Write as a unified, comprehensive answer
+**INSTRUCTIONS:**
+1. First, synthesize all sections into a final, coherent reasoning chain.
+2. Place this entire reasoning chain inside the <reasoning> tag.
+3. Then, on a new line, state ONLY the final answer to the original question inside the <final> tag.
 
-COHERENT FINAL ANSWER:"""
+**REQUIRED FORMAT:**
+<reasoning>[Your full, synthesized reasoning here]</reasoning>
+<final>[The final answer only]</final>
+
+**FORMATTED OUTPUT:**"""
         
         response = await provider_manager.generate_response_async(aggregation_prompt, model, **kwargs)
         return response["content"].strip()
@@ -826,24 +828,26 @@ COHERENT FINAL ANSWER:"""
             f"SECTION {i+1}:\n{part}" for i, part in enumerate(expanded_parts)
         ])
         
-        aggregation_prompt = f"""Combine the following sections into a single, coherent, well-flowing answer.
+        aggregation_prompt = f"""**ROLE:** You are a final answer synthesizer.
+**TASK:** Combine the provided sections into a single, coherent answer and then format it EXACTLY into the specified XML-like structure.
 
-ORIGINAL QUESTION: {original_question}
-
-OUTLINE USED:
+**ORIGINAL QUESTION:** {original_question}
+**OUTLINE USED:**
 {skeleton}
 
-SECTIONS TO COMBINE:
+**SECTIONS TO COMBINE:**
 {sections_text}
 
-INSTRUCTIONS:
-- Create smooth transitions between sections
-- Remove any redundancy or contradictions
-- Maintain all important information
-- Ensure logical flow and readability
-- Write as a unified, comprehensive answer
+**INSTRUCTIONS:**
+1. First, synthesize all sections into a final, coherent reasoning chain.
+2. Place this entire reasoning chain inside the <reasoning> tag.
+3. Then, on a new line, state ONLY the final answer to the original question inside the <final> tag.
 
-COHERENT FINAL ANSWER:"""
+**REQUIRED FORMAT:**
+<reasoning>[Your full, synthesized reasoning here]</reasoning>
+<final>[The final answer only]</final>
+
+**FORMATTED OUTPUT:**"""
         
         response = provider_manager.generate_response(aggregation_prompt, model, **kwargs)
         return response["content"].strip()
