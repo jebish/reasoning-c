@@ -586,7 +586,7 @@ class SkeletonOfThoughtApproach(BaseReasoningApproach):
                 full_reasoning_trace += f"Point {i+1} ERROR: {str(result)}\n"
             else:
                 expanded_parts.append(result)
-                full_reasoning_trace += f"\n--- Expanding Point {i+1}: \"{point_text}\" ---\n{result}\n"
+                full_reasoning_trace += f"\n--- Expanding Point {i+1}: --- \n{result}\n"
         
         # Step 4: Aggregation (optional)
         if self.enable_aggregation and len(expanded_parts) > 1:
@@ -642,7 +642,7 @@ class SkeletonOfThoughtApproach(BaseReasoningApproach):
                 expanded_part = self._expand_point_sync(i, point, outline_points, input_text, 
                                                       provider_manager, model, **kwargs)
                 expanded_parts.append(expanded_part)
-                full_reasoning_trace += f"\n--- Expanding Point {i+1}: \"{point_text}\" ---\n{expanded_part}\n"
+                full_reasoning_trace += f"\n--- Expanding Point {i+1}: --- \n{expanded_part}\n"
             except Exception as e:
                 expanded_part = f"[Error expanding point {i+1}: {str(e)}]"
                 expanded_parts.append(expanded_part)
