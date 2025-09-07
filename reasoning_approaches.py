@@ -100,52 +100,90 @@ class ChainOfThoughtApproach(BaseReasoningApproach):
 
 class LeastToMostApproach(BaseReasoningApproach):
     """
-    Least-to-Most Prompting (LtM)
+    Least-to-Most Prompting (LtM) - Corrected Sequential Implementation
     Source: Zhou et al. "Least-to-Most Prompting Enables Complex Reasoning in Large Language Models" (2022)
     https://arxiv.org/abs/2205.10625
     """
     
     def __init__(self):
         super().__init__("Least-to-Most Prompting (LtM)")
-    
+
     def reason(self, input_text: str, provider_manager, model: str, **kwargs) -> ReasoningResult:
         start_time = time.time()
         
-        # Step 1: Decompose the problem (Reduce step)
-        decompose_prompt = f"""Break down the following complex problem into smaller, manageable sub-problems. List them in order from simplest to most complex:
+        # --- Step 1: DECOMPOSITION ---
+        decompose_prompt = f"""Break down the following complex problem into a sequence of smaller, manageable sub-problems. List them in the order they should be solved.
 
 Problem: {input_text}
 
-Sub-problems (from simplest to most complex):"""
+Sub-problems (one per line):"""
         
         decomposition_response = provider_manager.generate_response(decompose_prompt, model, **kwargs)
-        
-        # Step 2: Solve sub-problems sequentially (Solve step)
-        solve_prompt = f"""Now solve each sub-problem step by step, using the results from previous sub-problems:
+        sub_problems = [line.strip() for line in decomposition_response["content"].strip().split('\n') if line.strip()]
 
-Original Problem: {input_text}
+        if not sub_problems:
+            # Fallback if decomposition fails
+            return self._fallback_reasoning(input_text, provider_manager, model, **kwargs)
 
-Sub-problems identified:
-{decomposition_response['content']}
+        # --- Step 2: SEQUENTIAL SOLVING (in a loop) ---
+        solved_context = ""
+        final_answer = "Failed to solve the final sub-problem."
+        
+        full_reasoning_trace = f"--- DECOMPOSITION ---\n{decomposition_response['content']}\n\n--- SEQUENTIAL SOLVING ---\n"
 
-Please solve each sub-problem in order and provide the final answer:"""
-        
-        final_response = provider_manager.generate_response(solve_prompt, model, **kwargs)
-        
+        for i, sub_problem in enumerate(sub_problems):
+            solve_prompt = f"""**ROLE:** You are a problem solver.
+**TASK:** Solve the current sub-problem using the context of previously solved steps.
+
+**ORIGINAL PROBLEM:**
+{input_text}
+
+**PREVIOUSLY SOLVED STEPS:**
+{solved_context if solved_context else "None."}
+
+**CURRENT SUB-PROBLEM TO SOLVE:**
+"{sub_problem}"
+
+**SOLUTION TO THE CURRENT SUB-PROBLEM:**"""
+
+            sub_solution_response = provider_manager.generate_response(solve_prompt, model, **kwargs)
+            sub_solution = sub_solution_response["content"]
+            
+            # Update the context for the next iteration
+            solved_context += f"Sub-problem: {sub_problem}\nSolution: {sub_solution}\n\n"
+            
+            # Update the trace for logging
+            full_reasoning_trace += f"Step {i+1}: Solving '{sub_problem}'\nResult: {sub_solution}\n\n"
+            
+            # The answer to the last sub-problem is the final answer
+            final_answer = sub_solution
+
         execution_time = time.time() - start_time
         
-        reasoning_trace = f"Decomposition: {decomposition_response['content']}\n\nSolution: {final_response['content']}"
-        
         return ReasoningResult(
-            final_answer=final_response["content"],
-            reasoning_trace=reasoning_trace,
+            final_answer=final_answer,
+            reasoning_trace=full_reasoning_trace,
             execution_time=execution_time,
             approach_name=self.name,
             metadata={
                 "decomposition": decomposition_response,
-                "final_solution": final_response,
+                "sub_problems_solved": len(sub_problems),
                 "citation": "Zhou et al. (2022). Least-to-Most Prompting Enables Complex Reasoning in Large Language Models. arXiv:2205.10625"
             }
+        )
+        
+    def _fallback_reasoning(self, input_text: str, provider_manager, model: str, **kwargs) -> ReasoningResult:
+        """A simple CoT fallback for when decomposition fails."""
+        start_time = time.time()
+        cot_prompt = f"Let's think step by step to solve the following problem:\n{input_text}"
+        response = provider_manager.generate_response(cot_prompt, model, **kwargs)
+        execution_time = time.time() - start_time
+        return ReasoningResult(
+            final_answer=response["content"],
+            reasoning_trace="LtM Fallback: Decomposition failed. Used basic Chain-of-Thought.",
+            execution_time=execution_time,
+            approach_name=self.name,
+            metadata={"decomposition_failed": True}
         )
 
 
@@ -1120,407 +1158,6 @@ class GraphOfThoughtApproach(BaseReasoningApproach):
         trace += f"High-quality nodes (≥7.0): {high_quality}\n"
         
         return trace
-
-# class GraphNode:
-#     """A node in the thought graph representing a partial thought or synthesized artifact."""
-
-#     def __init__(self, node_id: int, content: str, node_type: str = "thought", score: Optional[float] = None):
-#         self.id = node_id
-#         self.content = content.strip()
-#         self.type = node_type  # e.g., "problem", "thought", "aggregated", "refined"
-#         self.score = score
-#         self.in_edges: List[int] = []
-#         self.out_edges: List[int] = []
-#         self.metadata: Dict = {}
-
-#     def __repr__(self):
-#         return f"GraphNode(id={self.id}, type={self.type}, score={self.score}, content={self.content[:60]!r})"
-
-
-# class GraphEdge:
-#     """Semantic edge between two thoughts."""
-
-#     def __init__(self, from_node: int, to_node: int, relation: str = "generates"):
-#         self.from_node = from_node
-#         self.to_node = to_node
-#         self.relation = relation
-
-#     def to_dict(self):
-#         return {"from": self.from_node, "to": self.to_node, "relation": self.relation}
-
-
-# class ThoughtGraph:
-#     """Container for nodes and edges with helpful utilities."""
-
-#     def __init__(self):
-#         self.nodes: Dict[int, GraphNode] = {}
-#         self.edges: List[GraphEdge] = []
-#         self.next_id = 0
-
-#     def add_node(self, content: str, node_type: str = "thought", score: Optional[float] = None) -> GraphNode:
-#         node = GraphNode(self.next_id, content, node_type, score)
-#         self.nodes[self.next_id] = node
-#         self.next_id += 1
-#         return node
-
-#     def add_edge(self, from_id: int, to_id: int, relation: str = "generates"):
-#         if from_id not in self.nodes or to_id not in self.nodes:
-#             raise KeyError("Both nodes must exist before adding an edge")
-#         edge = GraphEdge(from_id, to_id, relation)
-#         self.edges.append(edge)
-#         self.nodes[from_id].out_edges.append(to_id)
-#         self.nodes[to_id].in_edges.append(from_id)
-
-#     def get_nodes_by_type(self, node_type: str) -> List[GraphNode]:
-#         return [n for n in self.nodes.values() if n.type == node_type]
-
-#     def to_dict(self):
-#         return {
-#             "nodes": {nid: {"content": n.content, "type": n.type, "score": n.score} for nid, n in self.nodes.items()},
-#             "edges": [e.to_dict() for e in self.edges],
-#         }
-
-
-# # ----------------- Utility functions -----------------
-
-# def jaccard_similarity(a: str, b: str) -> float:
-#     """Simple Jaccard similarity over word sets to detect near-duplicate thoughts.
-#     Lightweight and deterministic; replace with embedding similarity if available.
-#     """
-#     wa = set(re.findall(r"\w+", a.lower()))
-#     wb = set(re.findall(r"\w+", b.lower()))
-#     if not wa or not wb:
-#         return 0.0
-#     inter = wa.intersection(wb)
-#     union = wa.union(wb)
-#     return len(inter) / len(union)
-
-
-# # ----------------- Graph-of-Thoughts Approach -----------------
-
-# class GraphOfThoughtsEngine:
-#     """Refactored Graph-of-Thoughts approach with flexible policies.
-
-#     Parameters
-#     ----------
-#     beam_width: int
-#         How many promising nodes to keep for expansion each iteration (beam search).
-#     max_nodes: int
-#         Global cap on graph size to avoid runaway generation.
-#     reuse_threshold: float
-#         If a newly generated thought has similarity >= reuse_threshold with any existing node,
-#         we link to the existing node instead of creating a duplicate.
-#     score_threshold: float
-#         Minimum score for a node to be considered "high quality" when synthesizing.
-#     max_iterations: int
-#         Safety cap on number of expansion iterations.
-#     """
-
-#     def __init__(self,
-#                  beam_width: int = 4,
-#                  max_nodes: int = 40,
-#                  reuse_threshold: float = 0.7,
-#                  score_threshold: float = 7.0,
-#                  max_iterations: int = 8):
-#         self.beam_width = beam_width
-#         self.max_nodes = max_nodes
-#         self.reuse_threshold = reuse_threshold
-#         self.score_threshold = score_threshold
-#         self.max_iterations = max_iterations
-
-#     def reason(self, problem: str, provider_manager, model: str, **kwargs) -> Dict:
-#         """Main entry point. Returns a dict with final answer, graph, and metadata."""
-#         start_time = time.time()
-#         graph = ThoughtGraph()
-#         root = graph.add_node(problem, node_type="problem", score=10.0)
-
-#         # Active frontier: list of node ids considered for expansion (beam)
-#         frontier: List[int] = [root.id]
-
-#         iteration = 0
-#         while iteration < self.max_iterations and len(graph.nodes) < self.max_nodes and frontier:
-#             iteration += 1
-#             new_candidates: List[Tuple[GraphNode, int, str]] = []  # (node, parent_id, relation)
-
-#             # Generate successors for each node in frontier
-#             for node_id in frontier:
-#                 if len(graph.nodes) >= self.max_nodes:
-#                     break
-#                 node = graph.nodes[node_id]
-
-#                 # Use provider to generate a small batch of candidate next thoughts
-#                 generated_texts = self._generate_for_node(node, problem, provider_manager, model, **kwargs)
-
-#                 for txt in generated_texts:
-#                     txt = self._clean_text(txt)
-#                     if not txt:
-#                         continue
-
-#                     # Check reuse against existing nodes
-#                     reused_id = self._find_reuse_candidate(txt, graph)
-#                     if reused_id is not None:
-#                         # Add an edge to the existing node instead of creating a duplicate
-#                         graph.add_edge(node_id, reused_id, relation="reuses")
-#                         continue
-
-#                     # Otherwise create a tentative node (score will be filled by scorer)
-#                     candidate = graph.add_node(txt, node_type="thought")
-#                     graph.add_edge(node_id, candidate.id, relation="generates")
-#                     new_candidates.append((candidate, node_id, "generates"))
-
-#                     if len(graph.nodes) >= self.max_nodes:
-#                         break
-
-#             # Score newly created nodes (batch-friendly hook)
-#             if new_candidates:
-#                 nodes_to_score = [c[0] for c in new_candidates]
-#                 scores = self._score_nodes(nodes_to_score, problem, provider_manager, model, **kwargs)
-#                 for node in nodes_to_score:
-#                     node.score = scores.get(node.id, 5.0)
-
-#             # Build next frontier using beam policy (top-K by score among recent nodes)
-#             recent_ids = [c[0].id for c in new_candidates]
-#             scored_recent = [graph.nodes[nid] for nid in recent_ids if graph.nodes[nid].score is not None]
-#             scored_recent.sort(key=lambda x: x.score, reverse=True)
-
-#             # Keep some previously promising nodes as well (diversity)
-#             previous_promising = [n for n in graph.nodes.values() if (n.score or 0) >= self.score_threshold and n.type == "thought"]
-#             previous_promising_ids = sorted(previous_promising, key=lambda x: x.score or 0, reverse=True)[:self.beam_width]
-
-#             next_frontier_ids = [n.id for n in scored_recent[: self.beam_width]]
-#             # fill with previous promising if frontier is small
-#             for pn in previous_promising_ids:
-#                 if pn.id not in next_frontier_ids:
-#                     next_frontier_ids.append(pn.id)
-#                 if len(next_frontier_ids) >= self.beam_width:
-#                     break
-
-#             frontier = next_frontier_ids
-
-#             # optionally perform higher-order ops (aggregate/refine) every few iterations
-#             if iteration % 2 == 0:
-#                 self._aggregate_and_refine(graph, provider_manager, model, problem=problem, **kwargs)
-
-#             # Stopping condition: if we have one or more nodes above a high-confidence threshold
-#             high_conf_nodes = [n for n in graph.nodes.values() if (n.score or 0) >= 9.0]
-#             if high_conf_nodes:
-#                 # We have at least one highly confident thought; stop early to synthesize
-#                 break
-
-#         # Synthesize final answer from high-quality subgraph
-#         final_answer = self._synthesize_solution(graph, provider_manager, model, problem=problem, **kwargs)
-#         execution_time = time.time() - start_time
-
-#         return {
-#             "final_answer": final_answer,
-#             "graph": graph,
-#             "graph_dict": graph.to_dict(),
-#             "execution_time": execution_time,
-#             "iterations": iteration,
-#         }
-
-#     # ----------------- generation, scoring, reuse, and ops -----------------
-
-#     def _generate_for_node(self, node: GraphNode, problem: str, provider_manager, model: str, **kwargs) -> List[str]:
-#         """Generate candidate next steps for a node.
-
-#         This method is intentionally small and strict: it asks for 2-4 concrete steps. Providers may be batched.
-#         """
-#         branch = max(2, min(4, self.beam_width))
-#         prompt = (
-#             f"You are a concise reasoning engine. Provide exactly {branch} concrete next steps (one per line)"
-#             f" that advance the solution to the problem.\n\nPROBLEM: {problem}\nCURRENT THOUGHT: {node.content}\n\nSTEPS:" 
-#         )
-#         resp = provider_manager.generate_response(prompt, model, **kwargs)
-#         content = resp.get("content", "")
-#         lines = [ln.strip() for ln in re.split(r"\r?\n", content) if ln.strip()]
-#         # extract numbered or bullet lines if present
-#         extracted = []
-#         for ln in lines:
-#             # drop leading markers like 1. - •
-#             cleaned = re.sub(r'^\s*[\d\-\*\u2022\)\.]+\s*', '', ln)
-#             if cleaned:
-#                 extracted.append(cleaned)
-#         # If LLM returned one sentence or paragraph, try to split into clauses using semicolons
-#         if len(extracted) == 1 and ';' in extracted[0]:
-#             parts = [p.strip() for p in extracted[0].split(';') if p.strip()]
-#             extracted = parts[:branch]
-#         return extracted[:branch]
-
-#     def _clean_text(self, text: str) -> str:
-#         """Remove conversational fluff and keep a concise single-step thought."""
-#         # Remove common lead-in phrases
-#         text = text.strip()
-#         # Drop markdown fences if present
-#         text = re.sub(r"^```.*?```$", "", text, flags=re.DOTALL).strip()
-#         # remove leading enumerations like '1.' or '-'
-#         text = re.sub(r'^\s*[\d\-\*\u2022\)\.]+\s*', '', text)
-#         # collapse whitespace
-#         text = re.sub(r"\s+", " ", text)
-#         return text
-
-#     def _find_reuse_candidate(self, text: str, graph: ThoughtGraph) -> Optional[int]:
-#         """Return an existing node id if similarity >= reuse_threshold, else None."""
-#         best_id = None
-#         best_score = 0.0
-#         for nid, node in graph.nodes.items():
-#             if node.type == "problem":
-#                 continue
-#             sim = jaccard_similarity(text, node.content)
-#             if sim > best_score:
-#                 best_score = sim
-#                 best_id = nid
-#         if best_score >= self.reuse_threshold:
-#             return best_id
-#         return None
-
-#     def _score_nodes(self, nodes: List[GraphNode], problem: str, provider_manager, model: str, **kwargs) -> Dict[int, float]:
-#         """Score nodes using the LLM evaluator. Returns dict node_id->score.
-
-#         This method keeps a simple, strict JSON output protocol and is batch-ready (call provider in loop or batched API).
-#         """
-#         scores: Dict[int, float] = {}
-#         for node in nodes:
-#             prompt = (
-#                 f"You are a strict fact-checker. Evaluate the following single reasoning step for its logical/factual correctness"
-#                 f" in the context of the PROBLEM: {problem}\n\nSTEP: {node.content}\n\n"
-#                 "Return ONLY a JSON object like {\"score\": 1-10} and nothing else.\n"
-#                 "Scoring: 1-3 incorrect; 4-6 plausible; 7-8 good; 9-10 excellent.\n"
-#             )
-#             resp = provider_manager.generate_response(prompt, model, **kwargs)
-#             txt = resp.get("content", "").strip()
-#             score = self._parse_score_json_like(txt)
-#             scores[node.id] = float(score)
-#         return scores
-
-#     def _parse_score_json_like(self, text: str) -> float:
-#         # extract first JSON object
-#         try:
-#             m = re.search(r"\{.*?\}", text, flags=re.DOTALL)
-#             if not m:
-#                 # try to extract single number
-#                 num = re.search(r"(\d+(?:\.\d+)?)", text)
-#                 if num:
-#                     return float(num.group(1))
-#                 return 5.0
-#             obj = json.loads(m.group(0))
-#             return float(obj.get("score", 5.0))
-#         except Exception:
-#             return 5.0
-
-#     def _aggregate_and_refine(self, graph: ThoughtGraph, provider_manager, model: str, problem: str, **kwargs):
-#         """Find top candidate nodes and attempt aggregation/refinement.
-#         This is deliberately simple: pick top-2 distinct high-scoring nodes for aggregation.
-#         """
-#         candidates = [n for n in graph.nodes.values() if n.type == "thought" and (n.score or 0) >= (self.score_threshold - 1)]
-#         candidates = sorted(candidates, key=lambda x: x.score or 0, reverse=True)
-#         if len(candidates) >= 2:
-#             a, b = candidates[0], candidates[1]
-#             # synthesize
-#             prompt = (
-#                 f"Combine the following two concise steps into a single denser, precise step.\n\n"
-#                 f"Step A: {a.content}\nStep B: {b.content}\n\nReturn only the single combined step."
-#             )
-#             resp = provider_manager.generate_response(prompt, model, **kwargs)
-#             txt = resp.get("content", "").strip()
-#             txt = self._clean_text(txt)
-#             if txt:
-#                 agg = graph.add_node(txt, node_type="aggregated", score=(a.score + b.score) / 2 if a.score and b.score else None)
-#                 graph.add_edge(a.id, agg.id, "aggregated_into")
-#                 graph.add_edge(b.id, agg.id, "aggregated_into")
-
-#         # refine a marginal node
-#         to_refine = [n for n in graph.nodes.values() if n.type == "thought" and 5.5 <= (n.score or 0) < self.score_threshold]
-#         if to_refine:
-#             candidate = sorted(to_refine, key=lambda x: x.score or 0, reverse=True)[0]
-#             prompt = (
-#                 f"Rewrite the following step to be more precise and remove ambiguity. Return only the refined step.\n\nOriginal: {candidate.content}"
-#             )
-#             resp = provider_manager.generate_response(prompt, model, **kwargs)
-#             txt = self._clean_text(resp.get("content", ""))
-#             if txt:
-#                 ref = graph.add_node(txt, node_type="refined", score=(candidate.score or 5.0) + 0.5)
-#                 graph.add_edge(candidate.id, ref.id, "refined_to")
-
-#     def _synthesize_solution(self, graph: ThoughtGraph, provider_manager, model: str, problem: str, **kwargs) -> str:
-#         """Create final answer from top-scoring nodes and optionally short paths connecting them.
-
-#         Strategy:
-#         - select top-K nodes (by score)
-#         - optionally extend them by following in_edges to build a small subgraph
-#         - ask the model to synthesize a step-by-step solution using those nodes
-#         """
-#         quality_nodes = [n for n in graph.nodes.values() if n.type != "problem" and (n.score or 0) >= self.score_threshold]
-#         if not quality_nodes:
-#             # relax threshold
-#             quality_nodes = sorted([n for n in graph.nodes.values() if n.type != "problem"], key=lambda x: x.score or 0, reverse=True)[: min(6, len(graph.nodes))]
-
-#         if not quality_nodes:
-#             return "Could not generate a high-quality solution."
-
-#         # Build compact context lines
-#         header = f"Problem: {graph.nodes[0].content}\n\nUse the following high-quality reasoning steps (do NOT add new assumptions)."
-#         steps = []
-#         for n in sorted(quality_nodes, key=lambda x: x.score or 0, reverse=True):
-#             score_str = f"(score={n.score:.1f})" if n.score is not None else "(score=N/A)"
-#             steps.append(f"{score_str} {n.content}")
-
-#         prompt = header + "\n\nHigh-quality steps:\n" + "\n".join(f"- {s}" for s in steps) + (
-#             "\n\nInstruction: Synthesize the above into a clear, step-by-step solution and compute the final answer. Be concise and do not invent extra facts."
-#         )
-#         resp = provider_manager.generate_response(prompt, model, **kwargs)
-#         return resp.get("content", "").strip()
-
-# class GraphOfThoughtApproach(BaseReasoningApproach):
-#     """
-#     Adapter for the GraphOfThoughtsEngine to make it compatible with the BaseReasoningApproach framework.
-#     """
-#     def __init__(self, **engine_kwargs):
-#         super().__init__("Graph-of-Thought (GoT)")
-#         # This class now holds an instance of the powerful engine
-#         self.engine = GraphOfThoughtsEngine(**engine_kwargs)
-
-#     def reason(self, input_text: str, provider_manager, model: str, **kwargs) -> ReasoningResult:
-#         # Call the engine's reason method, which returns a dictionary
-#         result_dict = self.engine.reason(input_text, provider_manager, model, **kwargs)
-
-#         # Build the detailed trace from the graph object
-#         reasoning_trace = self._build_detailed_trace(result_dict['graph'])
-
-#         # Package the dictionary's results into the expected ReasoningResult object
-#         return ReasoningResult(
-#             final_answer=result_dict['final_answer'],
-#             reasoning_trace=reasoning_trace,
-#             execution_time=result_dict['execution_time'],
-#             approach_name=self.name,
-#             metadata={
-#                 "graph_structure": result_dict['graph'].to_dict(),
-#                 "iterations": result_dict.get('iterations', 0),
-#                 "citation": "Besta et al. (2023). Graph of Thoughts: Solving Elaborate Problems with Large Language Models. arXiv:2308.09687"
-#             }
-#         )
-
-#     def _build_detailed_trace(self, graph: ThoughtGraph) -> str:
-#         """Creates a readable string representation of the graph for the trace."""
-#         if not graph or not graph.nodes:
-#             return "Graph is empty or was not generated."
-        
-#         trace = f"Graph of Thoughts Reasoning (Nodes: {len(graph.nodes)})\n" + "=" * 50 + "\n"
-#         trace += f"Problem: {graph.nodes[0].content}\n\n"
-        
-#         # Sort nodes by ID for a chronological view
-#         sorted_nodes = sorted(graph.nodes.values(), key=lambda n: n.id)
-
-#         for node in sorted_nodes:
-#             if node.type == "problem": continue
-#             score_str = f" (Score: {node.score:.1f})" if node.score is not None else ""
-#             trace += f"Node {node.id} [{node.type.upper()}]{score_str}: {node.content}\n"
-#             # Show incoming connections that formed this node
-#             for edge in graph.edges:
-#                 if edge.to_node == node.id:
-#                     trace += f"  ← {edge.relation} ← Node {edge.from_node} ({graph.nodes[edge.from_node].type})\n"
-#             trace += "\n"
-#         return trace
 
 class ReWOOApproach(BaseReasoningApproach):
     """
