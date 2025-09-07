@@ -100,9 +100,8 @@ class ChainOfThoughtApproach(BaseReasoningApproach):
 
 class LeastToMostApproach(BaseReasoningApproach):
     """
-    Least-to-Most Prompting (LtM) - Corrected Sequential Implementation
+    Least-to-Most Prompting (LtM) - Corrected sequential implementation with structured final output.
     Source: Zhou et al. "Least-to-Most Prompting Enables Complex Reasoning in Large Language Models" (2022)
-    https://arxiv.org/abs/2205.10625
     """
     
     def __init__(self):
@@ -112,28 +111,37 @@ class LeastToMostApproach(BaseReasoningApproach):
         start_time = time.time()
         
         # --- Step 1: DECOMPOSITION ---
-        decompose_prompt = f"""Break down the following complex problem into a sequence of smaller, manageable sub-problems. List them in the order they should be solved.
-
-Problem: {input_text}
-
-Sub-problems (one per line):"""
-        
+        decompose_prompt = f"Break down the complex problem into a sequence of smaller sub-problems. List them in order.\n\nProblem: {input_text}\n\nSub-problems:"
         decomposition_response = provider_manager.generate_response(decompose_prompt, model, **kwargs)
-        sub_problems = [line.strip() for line in decomposition_response["content"].strip().split('\n') if line.strip()]
+        decomposition_text = decomposition_response["content"]
+        sub_problems = [line.strip() for line in decomposition_text.strip().split('\n') if line.strip()]
 
         if not sub_problems:
-            # Fallback if decomposition fails
             return self._fallback_reasoning(input_text, provider_manager, model, **kwargs)
 
         # --- Step 2: SEQUENTIAL SOLVING (in a loop) ---
         solved_context = ""
-        final_answer = "Failed to solve the final sub-problem."
+        formatted_output = "Failed to generate final formatted output."
         
-        full_reasoning_trace = f"--- DECOMPOSITION ---\n{decomposition_response['content']}\n\n--- SEQUENTIAL SOLVING ---\n"
-
         for i, sub_problem in enumerate(sub_problems):
-            solve_prompt = f"""**ROLE:** You are a problem solver.
-**TASK:** Solve the current sub-problem using the context of previously solved steps.
+            is_last_step = (i == len(sub_problems) - 1)
+            
+            if not is_last_step:
+                # --- INTERMEDIATE STEP PROMPT ---
+                prompt = f"""**ORIGINAL PROBLEM:** {input_text}
+**PREVIOUSLY SOLVED STEPS:**
+{solved_context if solved_context else "None."}
+**CURRENT SUB-PROBLEM TO SOLVE:** "{sub_problem}"
+
+**SOLUTION TO CURRENT SUB-PROBLEM:**"""
+                
+                sub_solution_response = provider_manager.generate_response(prompt, model, **kwargs)
+                sub_solution = sub_solution_response["content"]
+                solved_context += f"Sub-problem: {sub_problem}\nSolution: {sub_solution}\n\n"
+            else:
+                # --- FINAL STEP AND FORMATTING PROMPT ---
+                prompt = f"""**ROLE:** You are a problem solver completing the final step of a multi-part problem.
+**TASK:** First, solve the final sub-problem. Then, synthesize all the reasoning into the required final format.
 
 **ORIGINAL PROBLEM:**
 {input_text}
@@ -141,50 +149,55 @@ Sub-problems (one per line):"""
 **PREVIOUSLY SOLVED STEPS:**
 {solved_context if solved_context else "None."}
 
-**CURRENT SUB-PROBLEM TO SOLVE:**
+**FINAL SUB-PROBLEM TO SOLVE:**
 "{sub_problem}"
 
-**SOLUTION TO THE CURRENT SUB-PROBLEM:**"""
+**INSTRUCTIONS:**
+1. Solve the final sub-problem.
+2. Combine the decomposition and all solved steps into a coherent, step-by-step reasoning chain inside the <reasoning> tag.
+3. Provide only the final answer to the original problem inside the <final> tag.
 
-            sub_solution_response = provider_manager.generate_response(solve_prompt, model, **kwargs)
-            sub_solution = sub_solution_response["content"]
-            
-            # Update the context for the next iteration
-            solved_context += f"Sub-problem: {sub_problem}\nSolution: {sub_solution}\n\n"
-            
-            # Update the trace for logging
-            full_reasoning_trace += f"Step {i+1}: Solving '{sub_problem}'\nResult: {sub_solution}\n\n"
-            
-            # The answer to the last sub-problem is the final answer
-            final_answer = sub_solution
+**FORMATTED OUTPUT in the format**
+<reasoning>reasoning chain</reasoning>
+<final>[final answer only]</final>:
+
+**"""
+                
+                final_response = provider_manager.generate_response(prompt, model, **kwargs)
+                formatted_output = final_response["content"]
 
         execution_time = time.time() - start_time
         
+        final_answer = self._extract_from_tag(formatted_output, "final")
+        
         return ReasoningResult(
             final_answer=final_answer,
-            reasoning_trace=full_reasoning_trace,
+            reasoning_trace=formatted_output,
             execution_time=execution_time,
             approach_name=self.name,
             metadata={
-                "decomposition": decomposition_response,
+                "decomposition": decomposition_text,
                 "sub_problems_solved": len(sub_problems),
                 "citation": "Zhou et al. (2022). Least-to-Most Prompting Enables Complex Reasoning in Large Language Models. arXiv:2205.10625"
             }
         )
         
+    def _extract_from_tag(self, text: str, tag: str) -> str:
+        """Extracts content from a specific tag, e.g., <final>...</final>."""
+        pattern = f"<{tag}>(.*?)</{tag}>"
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            return match.group(1).strip()
+        lines = text.strip().split('\n')
+        return lines[-1].strip() if lines else "Extraction failed"
+
     def _fallback_reasoning(self, input_text: str, provider_manager, model: str, **kwargs) -> ReasoningResult:
-        """A simple CoT fallback for when decomposition fails."""
-        start_time = time.time()
-        cot_prompt = f"Let's think step by step to solve the following problem:\n{input_text}"
-        response = provider_manager.generate_response(cot_prompt, model, **kwargs)
-        execution_time = time.time() - start_time
-        return ReasoningResult(
-            final_answer=response["content"],
-            reasoning_trace="LtM Fallback: Decomposition failed. Used basic Chain-of-Thought.",
-            execution_time=execution_time,
-            approach_name=self.name,
-            metadata={"decomposition_failed": True}
-        )
+        # Fallback can also use the single-shot CoT with formatting
+        cot_approach = ChainOfThoughtApproach()
+        result = cot_approach.reason(input_text, provider_manager, model, **kwargs)
+        result.reasoning_trace = "LtM Fallback: Decomposition failed.\n" + result.reasoning_trace
+        result.metadata["decomposition_failed"] = True
+        return result
 
 
 class ReasoningAsPlanningApproach(BaseReasoningApproach):
