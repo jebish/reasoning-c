@@ -306,4 +306,3 @@ class ExperimentRunner:
         comparison = comparison.sort_values("avg_time")
         
         return comparison
-
