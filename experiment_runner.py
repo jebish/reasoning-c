@@ -12,7 +12,7 @@ import json
 from tqdm import tqdm
 
 from providers import ProviderManager
-from reasoning_approaches import ReasoningApproachManager
+from reasoning import ReasoningApproachManager
 from dataset_loader import DatasetLoader
 
 
